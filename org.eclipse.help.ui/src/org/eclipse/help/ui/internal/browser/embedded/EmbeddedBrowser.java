@@ -53,6 +53,7 @@ import org.eclipse.swt.graphics.Rectangle;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.Composite;
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.ProgressBar;
 import org.eclipse.swt.widgets.Shell;
@@ -327,21 +328,47 @@ public class EmbeddedBrowser {
 			}
 		});
 		browser.addProgressListener(new ProgressListener() {
-			public void changed(ProgressEvent event) {
+
+		    boolean isLinux = System.getProperty("os.name").toLowerCase() //$NON-NLS-1$
+                    .contains("linux"); //$NON-NLS-1$
+
+			public void changed(final ProgressEvent event) {
 				if (event.total > 0) {
-					statusBarProgress.setMaximum(event.total);
-					statusBarProgress.setSelection(Math.min(event.current, event.total));
-					statusBarSeparator.setVisible(true);
-					statusBarProgress.setVisible(true);
+				    if (isLinux) {
+				        Display.getCurrent().asyncExec(new Runnable() {
+	                        public void run() {
+	                            if (statusBarProgress != null && !statusBarProgress.isDisposed()) {
+	                                updateStatusProgress(event);
+	                            }
+	                        }
+                        });
+				    } else {
+				        updateStatusProgress(event);
+				    }
+
+				    statusBarSeparator.setVisible(true);
 				}
 			}
+
 			public void completed(ProgressEvent event) {
-				statusBarSeparator.setVisible(false);
-				statusBarProgress.setVisible(false);
+			    Display.getCurrent().asyncExec(new Runnable() {
+                    public void run() {
+                        if (statusBarProgress != null && !statusBarProgress.isDisposed()) {
+                            statusBarProgress.setVisible(false);
+                        }
+                    }
+			    });
+			    statusBarSeparator.setVisible(false);
+			}
+
+			private void updateStatusProgress(ProgressEvent event) {
+			    statusBarProgress.setMaximum(event.total);
+                statusBarProgress.setSelection(Math.min(event.current, event.total));
+                statusBarProgress.setVisible(true);
 			}
 		});
 	}
-	
+
 	private void createStatusBar(Composite parent) {
 		statusBar = new Composite(parent, SWT.NONE);
 		statusBar.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, false));

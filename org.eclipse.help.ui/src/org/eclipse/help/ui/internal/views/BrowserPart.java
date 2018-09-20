@@ -47,7 +47,10 @@ import org.eclipse.swt.browser.WindowEvent;
 import org.eclipse.swt.custom.BusyIndicator;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Display;
 import org.eclipse.ui.IMemento;
+import org.eclipse.ui.PartInitException;
+import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.actions.ActionFactory;
 import org.eclipse.ui.forms.AbstractFormPart;
 import org.eclipse.ui.forms.widgets.FormToolkit;
@@ -58,7 +61,7 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 	private final static String HIGHLIGHT_ON = "highlight-on"; //$NON-NLS-1$
 	private final static String HELP_VIEW_SCALE = "help_view_scale"; //$NON-NLS-1$
     private final static String EMPTY_PAGE = "<html><head></head><body></body></html>"; //$NON-NLS-1$
-    
+
 	private ReusableHelpPart parent;
 
 	private Browser browser;
@@ -68,11 +71,11 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 	private int lastProgress = -1;
 
 	private static final int SCALE_MAX = 250;
-	
+
 	private static final int SCALE_MIN = 50;
-	
+
 	private static final int SCALE_INCREMENT = 10;
-	
+
 	private int fontScalePercentage = 100;
 
 	private String url;
@@ -80,15 +83,15 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 	private Action showExternalAction;
 
 	private Action syncTocAction;
-	
+
 	private Action highlightAction;
 
 	private Action bookmarkAction;
 
 	private Action printAction;
-	
+
 	private Action magnifyAction;
-	
+
 	private Action reduceAction;
 
 	private String statusURL;
@@ -122,45 +125,81 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 			}
 		});
 		browser.addProgressListener(new ProgressListener() {
-			public void changed(ProgressEvent e) {
+
+            boolean isLinux = System.getProperty("os.name").toLowerCase() //$NON-NLS-1$
+                    .contains("linux"); //$NON-NLS-1$
+
+			public void changed(final ProgressEvent e) {
 				if (e.current == e.total)
 					return;
-				IStatusLineManager slm = BrowserPart.this.parent
-						.getStatusLineManager();
-				IProgressMonitor monitor = slm != null ? slm
-						.getProgressMonitor() : null;
-				if (lastProgress == -1) {
-					lastProgress = 0;
-					if (monitor != null) {
-						monitor.beginTask("", e.total); //$NON-NLS-1$
-						slm.setCancelEnabled(true);
-					}
-				} else if (monitor != null && monitor.isCanceled()) {
-					browser.stop();
-					return;
+
+				if (isLinux) {
+					Display.getCurrent().asyncExec(new Runnable() {
+						public void run() {
+							if (!browser.isDisposed()) {
+								updateBrowserWork(e);
+							}
+						}
+					});
+				} else {
+				    updateBrowserWork(e);
 				}
-				if (monitor != null)
-					monitor.worked(e.current - lastProgress);
-				lastProgress = e.current;
 			}
 
 			public void completed(ProgressEvent e) {
-				IStatusLineManager slm = BrowserPart.this.parent
-						.getStatusLineManager();
-				IProgressMonitor monitor = slm != null ? slm
-						.getProgressMonitor() : null;
-				if (monitor != null) {
-					slm.setCancelEnabled(false);
-					monitor.done();
-				}
-				lastProgress = -1;
-				if (fontScalePercentage != 100) {
-				    rescale();
-				}
-				String value = executeQuery("document.title"); //$NON-NLS-1$
-				BrowserPart.this.title = value != null ? value : "N/A"; //$NON-NLS-1$
+			    if (isLinux) {
+                    Display.getCurrent().asyncExec(new Runnable() {
+                        public void run() {
+                            completeWork();
+                        }
+                    });
+                } else {
+                    completeWork();
+                }
+			}
+
+			private void updateBrowserWork(ProgressEvent e) {
+			    IStatusLineManager slm = BrowserPart.this.parent
+                        .getStatusLineManager();
+                IProgressMonitor monitor = slm != null ? slm
+                        .getProgressMonitor() : null;
+                if (lastProgress == -1) {
+                    lastProgress = 0;
+                    if (monitor != null) {
+                        monitor.beginTask("", e.total); //$NON-NLS-1$
+                        slm.setCancelEnabled(true);
+                    }
+                } else if (monitor != null && monitor.isCanceled()) {
+                    browser.stop();
+                    return;
+                }
+                if (monitor != null)
+                    monitor.worked(e.current - lastProgress);
+                lastProgress = e.current;
+			}
+
+			private void completeWork() {
+			    IStatusLineManager slm = BrowserPart.this.parent
+                        .getStatusLineManager();
+                IProgressMonitor monitor = slm != null ? slm
+                        .getProgressMonitor() : null;
+                if (monitor != null) {
+                    slm.setCancelEnabled(false);
+                    monitor.done();
+                }
+                lastProgress = -1;
+
+                // The method is called in async way so the browser may have been disposed
+                if (!browser.isDisposed()) {
+	                if (fontScalePercentage != 100) {
+	                    rescale();
+	                }
+	                String value = executeQuery("document.title"); //$NON-NLS-1$
+	                BrowserPart.this.title = value != null ? value : "N/A"; //$NON-NLS-1$
+                }
 			}
 		});
+
 		browser.addStatusTextListener(new StatusTextListener() {
 			public void changed(StatusTextEvent event) {
 				if (processQuery(event.text))
@@ -177,15 +216,18 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 			public void open(WindowEvent event) {
 				if (statusURL != null) {
 					try {
-						String relativeURL = BaseHelpSystem.unresolve(new URL(
-								statusURL));
+						URL targetURL = new URL(statusURL);
+						String relativeURL = BaseHelpSystem.unresolve(targetURL);
 						if (BrowserPart.this.parent.isHelpResource(relativeURL)) {
-							BrowserPart.this.parent
-									.showExternalURL(relativeURL);
-							event.required = true;
+							BrowserPart.this.parent.showExternalURL(relativeURL);
+						} else {
+							PlatformUI.getWorkbench().getBrowserSupport().getExternalBrowser().openURL(targetURL);
 						}
+						event.required = true;
 					} catch (MalformedURLException e) {
 						HelpUIPlugin.logError("Malformed URL: " + statusURL, e); //$NON-NLS-1$
+					} catch (PartInitException e) {
+						HelpUIPlugin.logError("Can't open link in external browser: " + statusURL, e); //$NON-NLS-1$
 					}
 				}
 			}
@@ -244,10 +286,10 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 		bookmarkAction.setToolTipText(Messages.BrowserPart_bookmarkTooltip);
 		bookmarkAction.setImageDescriptor(HelpUIResources
 				.getImageDescriptor(IHelpUIConstants.IMAGE_ADD_BOOKMARK));
-		
+
 		highlightAction = new Action() {
 			public void run() {
-				IScopeContext instanceScope = InstanceScope.INSTANCE; 
+				IScopeContext instanceScope = InstanceScope.INSTANCE;
 				IEclipsePreferences prefs = instanceScope.getNode(HelpBasePlugin.PLUGIN_ID);
 				prefs.putBoolean(HIGHLIGHT_ON, highlightAction.isChecked());
 				if (browser.getUrl().indexOf("resultof")!=-1) browser.execute("setHighlight(" +highlightAction.isChecked()+");"); //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
@@ -257,7 +299,7 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 		highlightAction.setToolTipText(Messages.BrowserPart_highlightTooltip);
 		highlightAction.setImageDescriptor(HelpUIResources
 				.getImageDescriptor(IHelpUIConstants.IMAGE_HIGHLIGHT));
-		
+
 		printAction = new Action(ActionFactory.PRINT.getId()) {
 			public void run() {
 				doPrint();
@@ -266,7 +308,7 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 		printAction.setImageDescriptor(HelpUIResources
 				.getImageDescriptor(IHelpUIConstants.IMAGE_HELP_PRINT));
 		printAction.setToolTipText(Messages.BrowserPart_printTooltip);
-			
+
 		tbm.insertBefore("back", showExternalAction); //$NON-NLS-1$
 		tbm.insertBefore("back", syncTocAction); //$NON-NLS-1$
 		tbm.insertBefore("back", printAction); //$NON-NLS-1$
@@ -275,13 +317,13 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 		tbm.insertBefore("back", new Separator()); //$NON-NLS-1$
 		enableButtons();
 	}
-	
+
 	private void contributeToMenu(IMenuManager menuManager) {
 		if (FontUtils.canRescaleHelpView()) {
 			fontScalePercentage = Platform.getPreferencesService().getInt(HelpBasePlugin.PLUGIN_ID,
 					HELP_VIEW_SCALE, 100, null);
 			if (menuManager != null) {
-			    addMenuActions(menuManager); 
+			    addMenuActions(menuManager);
 			}
 		}
 	}
@@ -319,7 +361,7 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.help.ui.internal.views.IHelpPart#init(org.eclipse.help.ui.internal.views.NewReusableHelpPart)
 	 */
 	public void init(ReusableHelpPart parent, String id, IMemento memento) {
@@ -338,7 +380,7 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.help.ui.internal.views.IHelpPart#getControl()
 	 */
 	public Control getControl() {
@@ -347,7 +389,7 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.help.ui.internal.views.IHelpPart#setVisible(boolean)
 	 */
 	public void setVisible(boolean visible) {
@@ -358,7 +400,7 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.ui.forms.IFormPart#setFocus()
 	 */
 	public void setFocus() {
@@ -371,7 +413,7 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 			browser.setUrl(url);
 		}
 	}
-	
+
 	public void clearBrowser() {
 		if (browser != null) {
 			browser.setText(EMPTY_PAGE);
@@ -452,7 +494,7 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.help.ui.internal.views.IHelpPart#fillContextMenu(org.eclipse.jface.action.IMenuManager)
 	 */
 
@@ -462,7 +504,7 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.help.ui.internal.views.IHelpPart#hasFocusControl(org.eclipse.swt.widgets.Control)
 	 */
 	public boolean hasFocusControl(Control control) {
@@ -474,17 +516,17 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 			return printAction;
 		return null;
 	}
-	
+
 	private void enableButtons() {
 		if (magnifyAction != null) {
 		    magnifyAction.setEnabled(fontScalePercentage < SCALE_MAX);
-	        reduceAction.setEnabled(fontScalePercentage > SCALE_MIN);	
+	        reduceAction.setEnabled(fontScalePercentage > SCALE_MIN);
 		}
 	}
 
 	private void doMagnify(int percent) {
 		fontScalePercentage += percent;
-		IScopeContext instanceScope = InstanceScope.INSTANCE; 
+		IScopeContext instanceScope = InstanceScope.INSTANCE;
 		IEclipsePreferences prefs = instanceScope.getNode(HelpBasePlugin.PLUGIN_ID);
 		prefs.putInt(HELP_VIEW_SCALE, fontScalePercentage);
 		try {
@@ -495,7 +537,7 @@ public class BrowserPart extends AbstractFormPart implements IHelpPart {
 	}
 
 	public void rescale() {
-		browser.execute(FontUtils.getRescaleScript(fontScalePercentage)); 
+		browser.execute(FontUtils.getRescaleScript(fontScalePercentage));
 		enableButtons();
 	}
 

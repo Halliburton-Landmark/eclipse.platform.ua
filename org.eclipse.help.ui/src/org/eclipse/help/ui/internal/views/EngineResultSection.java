@@ -59,9 +59,9 @@ import org.osgi.framework.Bundle;
 public class EngineResultSection {
 
 	private static final String KEY_PREFIX_GRAYED = "grayed:"; //$NON-NLS-1$
-	
+
 	private static final String CAT_HEADING_PREFIX = "catheading:"; //$NON-NLS-1$
-	
+
 	private SearchResultsPart part;
 
 	private EngineDescriptor desc;
@@ -226,7 +226,7 @@ public class EngineResultSection {
 
 	/*
 	 * (non-Javadoc)
-	 * 
+	 *
 	 * @see org.eclipse.help.internal.search.federated.ISearchEngineResultCollector#add(org.eclipse.help.internal.search.federated.ISearchEngineResult[])
 	 */
 	public synchronized void add(ISearchEngineResult[] matches) {
@@ -259,11 +259,12 @@ public class EngineResultSection {
 
 	private void asyncUpdateResults(boolean now, final boolean scrollToBeginning) {
 		Runnable runnable = new Runnable() {
-
 			public void run() {
-				BusyIndicator.showWhile(section.getDisplay(), new Runnable() {
-
+				BusyIndicator.showWhile(PlatformUI.getWorkbench().getDisplay(), new Runnable() {
 					public void run() {
+						if (section.isDisposed()) {
+							return;
+						}
 						updateResults(true);
 						if (scrollToBeginning) {
 							searchResults.setFocus();
@@ -274,12 +275,14 @@ public class EngineResultSection {
 				});
 			}
 		};
-		if (section.isDisposed())
+		if (section.isDisposed()) {
 			return;
-		if (now)
-			section.getDisplay().syncExec(runnable);
-		else
-			section.getDisplay().asyncExec(runnable);
+		}
+		if (now) {
+			PlatformUI.getWorkbench().getDisplay().syncExec(runnable);
+		} else {
+			PlatformUI.getWorkbench().getDisplay().asyncExec(runnable);
+		}
 	}
 
 	private ISearchEngineResult[] getResults() {
@@ -300,11 +303,11 @@ public class EngineResultSection {
 			sorter.sort(null, results);
 		return results;
 	}
-	
+
 	/**
 	 * Returns a copy of the given image but grayed and half transparent.
 	 * This gives the icon a grayed/disabled look.
-	 * 
+	 *
 	 * @param image the image to gray
 	 * @return the grayed image
 	 */
@@ -388,11 +391,11 @@ public class EngineResultSection {
 						imageId = id;
 				}
 			}
-			
+
 			if (isPotentialHit) {
 				imageId = KEY_PREFIX_GRAYED + imageId;
 			}
-			
+
 			buff.append(imageId);
 			buff.append("\">"); //$NON-NLS-1$
 			buff.append("<a href=\""); //$NON-NLS-1$
@@ -424,7 +427,7 @@ public class EngineResultSection {
 			else {
 				elabel = hit.getLabel();
 			}
-			
+
 			elabel = EscapeUtils.escapeSpecialChars(elabel);
 			buff.append(elabel);
 			buff.append("</a>"); //$NON-NLS-1$
@@ -452,7 +455,7 @@ public class EngineResultSection {
 	 * Registers the given icon URL for use with this section. Icons
 	 * must be registered before use and referenced by the returned
 	 * ID.
-	 * 
+	 *
 	 * @param iconURL the URL to the icon
 	 * @return the ID to use for referencing the icon
 	 */
@@ -469,7 +472,7 @@ public class EngineResultSection {
 	 * Same as registerHitIcon() but to register a grayed icon. You
 	 * can provide the same URL for both the regular and grayed icons,
 	 * but two different IDs will be returned.
-	 * 
+	 *
 	 * @param iconURL the URL to the icon
 	 * @return the ID to use for referencing the icon
 	 */
