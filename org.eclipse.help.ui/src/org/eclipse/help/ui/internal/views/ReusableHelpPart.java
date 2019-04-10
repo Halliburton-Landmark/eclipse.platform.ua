@@ -4,9 +4,13 @@
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
+<<<<<<< dsg-4_10
  * https://www.eclipse.org/legal/epl-2.0/
  *
  * SPDX-License-Identifier: EPL-2.0
+=======
+ * http://www.eclipse.org/legal/epl-v10.html
+>>>>>>> 2fd43bc Apply Landmark changes
  *
  * Contributors:
  *     IBM Corporation - initial API and implementation
@@ -43,6 +47,7 @@ import org.eclipse.help.internal.search.federated.IndexerJob;
 import org.eclipse.help.internal.util.ProductPreferences;
 import org.eclipse.help.search.ISearchEngine2;
 import org.eclipse.help.ui.internal.DefaultHelpUI;
+import org.eclipse.help.ui.internal.ExecuteCommandAction;
 import org.eclipse.help.ui.internal.HelpUIPlugin;
 import org.eclipse.help.ui.internal.HelpUIResources;
 import org.eclipse.help.ui.internal.IHelpUIConstants;
@@ -826,8 +831,12 @@ public class ReusableHelpPart implements IHelpUIConstants,
 		page.addPart(HV_RELATED_TOPICS, true);
 		pages.add(page);
 
+		// BUG 381953
+        // Temporary hide Index action as it is not used at this time, Help do not implement an index
+        // See also: SeeAlsoPart#addLinks
+
 		// index page
-		page = new HelpPartPage(HV_INDEX_PAGE,
+		/*page = new HelpPartPage(HV_INDEX_PAGE,
 				Messages.ReusableHelpPart_indexPage_name,
 				IHelpUIConstants.IMAGE_INDEX);
 		page.setVerticalSpacing(0);
@@ -836,7 +845,7 @@ public class ReusableHelpPart implements IHelpUIConstants,
 		page.addPart(HV_SCOPE_SELECT, false);
 		page.addPart(HV_INDEX_TYPEIN, false);
 		page.addPart(HV_INDEX, true);
-		pages.add(page);
+		pages.add(page);*/
 	}
 
 	public void init(IActionBars bars, IToolBarManager toolBarManager,
@@ -1287,6 +1296,11 @@ public class ReusableHelpPart implements IHelpUIConstants,
 			HelpURLConnection.parseQuery(url.substring(qloc+1), args);
 			((ISearchEngine2)desc.getEngine()).open((String)args.get("id")); //$NON-NLS-1$
 			return;
+		} else if (url.startsWith("command://")) { //$NON-NLS-1$
+			ExecuteCommandAction action = new ExecuteCommandAction();
+			action.setInitializationString(url.substring(10));
+			action.run();
+			return;
 		}
 		if (replace) {
 			if (openInternalBrowser(url))
@@ -1434,7 +1448,7 @@ public class ReusableHelpPart implements IHelpUIConstants,
 		if (href != null && !href.startsWith("__")) { //$NON-NLS-1$
 			openAction.setTarget(target);
 			manager.add(openAction);
-			if (!href.startsWith("nw:") && !href.startsWith("open:")) { //$NON-NLS-1$ //$NON-NLS-2$
+			if (!href.startsWith("nw:") && !href.startsWith("open:") && !href.startsWith("command:")) { //$NON-NLS-1$ //$NON-NLS-2$ //$NON-NLS-3$
 				openInHelpAction.setTarget(target);
 				manager.add(openInHelpAction);
 			}
